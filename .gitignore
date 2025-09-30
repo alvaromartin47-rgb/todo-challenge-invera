@@ -1,0 +1,4 @@
+.env
+comandos-utiles
+__pycache__
+tasks/management/commands/test_docker.py
