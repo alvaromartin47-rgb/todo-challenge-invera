@@ -2,7 +2,6 @@ from rest_framework import viewsets, decorators
 from rest_framework.response import Response
 from .models import User
 from .serializer import UserSerializer
-from rest_framework.permissions import AllowAny
 
 class UsersViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
