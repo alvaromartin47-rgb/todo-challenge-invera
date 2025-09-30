@@ -26,8 +26,8 @@ Una API REST desarrollada con Django y Django REST Framework para la gestión de
 
 ### 1. Clonar el repositorio
 ```bash
-git clone <repository-url>
-cd invera
+git clone https://github.com/alvaromartin47-rgb/todo-challenge-invera.git
+cd todo-challenge-invera
 ```
 
 ### 2. Configurar variables de entorno
@@ -39,7 +39,7 @@ cp env.example .env
 Editar el archivo `.env` con tus configuraciones:
 ```env
 # App Configuration
-API_PORT=4000
+PORT=4000
 ACCESS_TOKEN_LIFETIME= # in minutes
 REFRESH_TOKEN_LIFETIME= # in days
 SECRET_KEY=
