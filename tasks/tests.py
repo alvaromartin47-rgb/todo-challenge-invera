@@ -5,8 +5,7 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 from .models import Task
 from datetime import datetime, timedelta
-
-# Create your tests here.
+from users.models import User
 
 class TaskAPITestCase(APITestCase):
     """
@@ -62,276 +61,375 @@ class TaskAPITestCase(APITestCase):
             description='Creado manualmente para el test'
         )
 
+class IntegrationTaskTestsBase(TaskAPITestCase):
+    """Clase base para tests de integración con autenticación"""
 
-# =============================================================================
-# TESTS CRUD DE TAREAS
-# =============================================================================
+    def setUp(self):
+        super().setUp()
+        self.user = User.objects.create_user(username="alvaro", password="1234")
 
-class TaskCRUDTests(TaskAPITestCase):
-    """Tests para operaciones CRUD de tareas"""
+    def _login_fail_user(self):
+        login_response = self.client.post("/api/v1/auth/login/", {
+            "username": "alvaro",
+            "password": "12345"
+        }, format="json")
+
+        self.assertEqual(login_response.status_code, status.HTTP_401_UNAUTHORIZED)
     
-    def test_create_task_success(self):
-        """Test: Crear una nueva tarea"""
-        url = reverse('task-list')
+    def _logout_user(self):
+        self.client.credentials(
+            HTTP_AUTHORIZATION=""
+        )
+
+    def _login_user(self):
+        login_response = self.client.post("/api/v1/auth/login/", {
+            "username": "alvaro",
+            "password": "1234"
+        }, format="json")
+
+        self.assertEqual(login_response.status_code, status.HTTP_200_OK)
+        token = login_response.data["access"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+    def _create_task(self, data):
+        response = self.client.post("/api/v1/tasks/", data, format='json')
+        return response
+
+    def _update_task(self, id, data):
+        response = self.client.put(f"/api/v1/tasks/{id}/", data, format='json')
+        return response
+
+    def _get_task(self, id):
+        response = self.client.get(f"/api/v1/tasks/{id}/", format='json')
+        return response
+
+    def _delete_task(self, id):
+        response = self.client.delete(f"/api/v1/tasks/{id}/", format='json')
+        return response
+
+    def _update_task_field(self, id, field, value):
+        response = self.client.patch(f"/api/v1/tasks/{id}/", {field: value}, format='json')
+        return response
+
+    def _search_task(self, query):
+        response = self.client.get(f"/api/v1/tasks/?search={query}", format='json')
+        return response
+
+    def _filter_task(self, field, value):
+        response = self.client.get(f"/api/v1/tasks/?{field}={value}", format='json')
+        return response
+
+class IntegrationPostTests(IntegrationTaskTestsBase):
+    """Tests de integración para método POST (CREATE)"""
+
+    def test_create_task_with_authentication(self):
+        self._login_user()
+
         data = {
-            'title': 'Nueva Tarea de Test',
-            'description': 'Descripción de la nueva tarea',
-            'done': False
+            'title': 'Tarea de Test',
+            'description': 'Descripción de la tarea de test'
         }
-        
-        response = self.client.post(url, data, format='json')
-        
+
+        response = self._create_task(data)
+
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['title'], 'Nueva Tarea de Test')
-        self.assertEqual(response.data['description'], 'Descripción de la nueva tarea')
-        self.assertFalse(response.data['done'])
-        
-        # Verificar que se guardó en BD
-        task = Task.objects.get(id=response.data['id'])
-        self.assertEqual(task.title, 'Nueva Tarea de Test')
-    
-    def test_list_all_tasks(self):
-        """Test: Ver lista de todas las tareas existentes"""
-        url = reverse('task-list')
-        
-        response = self.client.get(url)
-        
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # 5 seed tasks + 1 manual task = 6 total
-        self.assertEqual(len(response.data), 6)
-    
-    def test_retrieve_single_task(self):
-        """Test: Obtener una tarea específica"""
-        url = reverse('task-detail', args=[self.manual_task.id])
-        
-        response = self.client.get(url)
-        
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['title'], 'Manual Test Task')
-        self.assertEqual(response.data['id'], str(self.manual_task.id))
-    
-    def test_update_task_success(self):
-        """Test: Actualizar una tarea existente"""
-        url = reverse('task-detail', args=[self.manual_task.id])
+        self.assertEqual(response.data['title'], 'Tarea de Test')
+        self.assertEqual(response.data['description'], 'Descripción de la tarea de test')
+
+    def test_create_task_with_authentication_fails(self):
+        self._login_fail_user()
+
         data = {
-            'title': 'Tarea Actualizada',
-            'description': 'Descripción actualizada',
-            'done': True
+            'title': 'Tarea de Test',
+            'description': 'Descripción de la tarea de test'
         }
-        
-        response = self.client.put(url, data, format='json')
-        
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['title'], 'Tarea Actualizada')
-        self.assertTrue(response.data['done'])
-        
-        # Verificar en BD
-        task = Task.objects.get(id=self.manual_task.id)
-        self.assertEqual(task.title, 'Tarea Actualizada')
-        self.assertTrue(task.done)
-    
-    def test_mark_task_as_completed(self):
-        """Test: Marcar tarea como completada"""
-        url = reverse('task-detail', args=[self.manual_task.id])
+
+        response = self._create_task(data)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_create_task_with_authentication_and_missing_fields_fails(self):
+        self._login_user()
+
         data = {
-            'title': self.manual_task.title,
-            'description': self.manual_task.description,
-            'done': True  # Marcar como completada
+            'title': 'Tarea de Test',
         }
-        
-        response = self.client.put(url, data, format='json')
-        
+
+        response = self._create_task(data)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class IntegrationGetTests(IntegrationTaskTestsBase):
+    """Tests de integración para método GET (READ)"""
+
+    def test_get_task_with_authentication(self):
+        self._login_user()
+
+        data = {
+            'title': 'Tarea de Test a obtener',
+            'description': 'Descripción de la tarea de test a obtener'
+        }
+
+        response = self._create_task(data)
+        response = self._get_task(response.data['id'])
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(response.data['done'])
-        
-        # Verificar en BD
-        task = Task.objects.get(id=self.manual_task.id)
-        self.assertTrue(task.done)
-    
-    def test_partial_update_task(self):
-        """Test: Actualización parcial de tarea (PATCH)"""
-        url = reverse('task-detail', args=[self.manual_task.id])
-        data = {'done': True}  # Solo actualizar el campo 'done'
-        
-        response = self.client.patch(url, data, format='json')
-        
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(response.data['done'])
-        # El título debe permanecer igual
-        self.assertEqual(response.data['title'], 'Manual Test Task')
-    
-    def test_delete_task_success(self):
-        """Test: Eliminar una tarea"""
-        task_id = self.manual_task.id
-        url = reverse('task-detail', args=[task_id])
-        
-        response = self.client.delete(url)
-        
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        
-        # Verificar que se eliminó de BD
-        with self.assertRaises(Task.DoesNotExist):
-            Task.objects.get(id=task_id)
-    
-    def test_delete_nonexistent_task(self):
-        """Test: Fallo al eliminar tarea que no existe"""
-        url = reverse('task-detail', args=['00000000-0000-0000-0000-000000000000'])
-        
-        response = self.client.delete(url)
-        
+        self.assertEqual(response.data['title'], 'Tarea de Test a obtener')
+        self.assertEqual(response.data['description'], 'Descripción de la tarea de test a obtener')
+
+    def test_get_task_with_authentication_fails(self):
+        self._login_fail_user()
+
+        response = self._get_task(self.manual_task.id)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_get_task_with_invalid_uuid_fails(self):
+        self._login_user()
+
+        response = self._get_task('invalid-uuid')
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_task_with_nonexistent_task_fails(self):
+        self._login_user()
+
+        response = self._get_task('00000000-0000-0000-0000-000000000000')
+
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
-# =============================================================================
-# TESTS DE FILTRADO Y BÚSQUEDA
-# =============================================================================
+class IntegrationPutPatchTests(IntegrationTaskTestsBase):
+    """Tests de integración para métodos PUT/PATCH (UPDATE)"""
 
-class TaskFilteringTests(TaskAPITestCase):
-    """Tests para filtrado y búsqueda de tareas"""
+    def test_update_task_with_authentication(self):
+        self._login_user()
+
+        data = {
+            'title': 'Tarea de Test a actualizar',
+            'description': 'Descripción de la tarea de test a actualizar',
+            'done': False
+        }
+
+        response = self._create_task(data)
+
+        data = {
+            'title': 'Tarea de Test Actualizada',
+            'description': 'Descripción de la tarea de test actualizada',
+            'done': True
+        }
+
+        response = self._update_task(response.data['id'], data)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['title'], 'Tarea de Test Actualizada')
+        self.assertEqual(response.data['description'], 'Descripción de la tarea de test actualizada')
+
+    def test_update_task_incomplete_data_with_authentication_fails(self):
+        self._login_user()
+
+        data = {
+            'title': 'Tarea de Test a actualizar',
+            'description': 'Descripción de la tarea de test a actualizar',
+            'done': False
+        }
+
+        response = self._create_task(data)
+
+        data = {
+            'title': 'Tarea de Test Actualizada',
+        }
+
+        response = self._update_task(response.data['id'], data)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_task_field_with_authentication(self):
+        self._login_user()
+
+        data = {
+            'title': 'Tarea de Test a actualizar campo',
+            'description': 'Descripción de la tarea de test a actualizar campo',
+            'done': False
+        }
+
+        response = self._create_task(data)
+        response = self._update_task_field(response.data['id'], 'done', True)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['done'])
+
+    def test_update_task_field_with_authentication_fails(self):
+        self._login_fail_user()
+
+        response = self._update_task_field(self.manual_task.id, 'done', True)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class IntegrationDeleteTests(IntegrationTaskTestsBase):
+    """Tests de integración para método DELETE"""
+
+    def test_delete_task_with_authentication(self):
+        self._login_user()
+
+        data = {
+            'title': 'Tarea de Test a eliminar',
+            'description': 'Descripción de la tarea de test a eliminar'
+        }
+
+        response = self._create_task(data)
+        response = self._delete_task(response.data['id'])
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_delete_task_with_authentication_fails(self):
+        self._login_fail_user()
+
+        response = self._delete_task(self.manual_task.id)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+class IntegrationFilteringTests(IntegrationTaskTestsBase):
+    """Tests de integración para filtrado y búsqueda de tareas con autenticación"""
     
     def setUp(self):
         super().setUp()
         
-        # Crear tareas específicas para filtrado
-        self.completed_task = Task.objects.create(
-            title='Tarea Completada',
-            description='Esta tarea está completada',
-            done=True
-        )
+        self._login_user()
         
-        self.pending_task = Task.objects.create(
-            title='Tarea Pendiente',
-            description='Esta tarea está pendiente',
-            done=False
-        )
+        self.completed_task_data = {
+            'title': 'Tarea Completada',
+            'description': 'Esta tarea está completada',
+            'done': True
+        }
+        completed_response = self._create_task(self.completed_task_data)
+        self.completed_task_id = completed_response.data['id']
         
-        # Crear tarea con fecha específica (ayer)
-        yesterday = timezone.now() - timedelta(days=1)
-        self.old_task = Task.objects.create(
-            title='Tarea de Ayer',
-            description='Tarea creada ayer'
-        )
-        self.old_task.created_at = yesterday
-        self.old_task.save()
+        self.pending_task_data = {
+            'title': 'Tarea Pendiente',
+            'description': 'Esta tarea está pendiente',
+            'done': False
+        }
+        pending_response = self._create_task(self.pending_task_data)
+        self.pending_task_id = pending_response.data['id']
+        
+        self.search_task_data = {
+            'title': 'Implementar autenticación de usuarios',
+            'description': 'Desarrollar sistema de login con servidor seguro',
+            'done': False
+        }
+        search_response = self._create_task(self.search_task_data)
+        self.search_task_id = search_response.data['id']
+
+        self._logout_user()
     
     def test_filter_tasks_by_completion_status(self):
         """Test: Filtrar tareas por estado de completado"""
-        # Filtrar tareas completadas
-        url = reverse('task-list')
-        response = self.client.get(url, {'done': 'true'})
+        self._login_user()
         
+        response = self._filter_task('done', 'true')
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         completed_tasks = [task for task in response.data if task['done']]
         self.assertTrue(len(completed_tasks) >= 1)
         
-        # Filtrar tareas pendientes
-        response = self.client.get(url, {'done': 'false'})
+        completed_task_ids = [task['id'] for task in completed_tasks]
+        self.assertIn(self.completed_task_id, completed_task_ids)
+        
+        response = self._filter_task('done', 'false')
+        
         pending_tasks = [task for task in response.data if not task['done']]
         self.assertTrue(len(pending_tasks) >= 1)
+        
+        pending_task_ids = [task['id'] for task in pending_tasks]
+        self.assertIn(self.pending_task_id, pending_task_ids)
     
     def test_search_tasks_by_title(self):
-        """Test: Buscar tareas por título"""
-        url = reverse('task-list')
-        response = self.client.get(url, {'search': 'autenticación'})
+        self._login_user()
+
+        response = self._search_task('autenticación')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(len(response.data) >= 1)
         
-        # Verificar que contiene la palabra buscada
         found_task = next((task for task in response.data if 'autenticación' in task['title']), None)
         self.assertIsNotNone(found_task)
+        
+        search_task_ids = [task['id'] for task in response.data]
+        self.assertIn(self.search_task_id, search_task_ids)
     
     def test_search_tasks_by_description(self):
-        """Test: Buscar tareas por contenido/descripción"""
-        url = reverse('task-list')
-        response = self.client.get(url, {'search': 'servidor'})
+        self._login_user()
+
+        response = self._search_task('servidor')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         
-        # Verificar que encontró tareas con esa palabra en descripción
-        found_task = next((task for task in response.data 
-                          if 'servidor' in task['description'].lower()), None)
+        found_task = next((task for task in response.data if 'servidor' in task['description'].lower()), None)
         self.assertIsNotNone(found_task)
+        
+        search_task_ids = [task['id'] for task in response.data]
+        self.assertIn(self.search_task_id, search_task_ids)
     
     def test_filter_tasks_by_creation_date(self):
-        """Test: Filtrar tareas por fecha de creación"""
-        url = reverse('task-list')
+        self._login_user()
+        
         today = timezone.now().date()
         
-        # Filtrar tareas de hoy usando el formato correcto que espera la API
-        response = self.client.get(url, {'created_at': today.isoformat()})
+        response = self._filter_task('created_at', today.isoformat())
+
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         
-        # Verificar que las tareas devueltas son de hoy
         for task in response.data:
             task_date = timezone.datetime.fromisoformat(task['created_at'].replace('Z', '+00:00')).date()
             self.assertEqual(task_date, today)
+        
+        today_task_ids = [task['id'] for task in response.data]
+        self.assertIn(self.completed_task_id, today_task_ids)
+        self.assertIn(self.pending_task_id, today_task_ids)
+        self.assertIn(self.search_task_id, today_task_ids)
     
     
     def test_combined_filters(self):
-        """Test: Combinación de filtros (búsqueda + estado)"""
-        url = reverse('task-list')
-        response = self.client.get(url, {
+        self._login_user()
+        
+        response = self._filter_task('search', 'Implementar')
+        response = self._filter_task('done', 'false')
+        response = self._filter_task('search', 'Implementar')
+        response = self._filter_task('done', 'false')
+        
+        response = self.client.get("/api/v1/tasks/", {
             'search': 'Implementar',
             'done': 'false'
-        })
+        }, format='json')
+        
+        response = self.client.get("/api/v1/tasks/", {
+            'search': 'Implementar',
+            'done': 'false'
+        }, format='json')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         
-        # Verificar que todas las tareas devueltas están pendientes y contienen "Implementar"
         for task in response.data:
             self.assertFalse(task['done'])
             self.assertTrue('Implementar' in task['title'] or 'Implementar' in task['description'])
+        
+        combined_task_ids = [task['id'] for task in response.data]
+        self.assertIn(self.search_task_id, combined_task_ids)
 
+    def test_filter_tasks_without_authentication_fails(self):
+        self._login_fail_user()
+        
+        response = self._filter_task('done', 'true')
+        
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-# =============================================================================
-# TESTS DE CASOS EDGE
-# =============================================================================
-
-class TaskEdgeCasesTests(TaskAPITestCase):
-    """Tests para casos edge y validaciones"""
-    
-    def test_create_task_missing_required_fields(self):
-        """Test: Crear tarea sin campos requeridos"""
-        url = reverse('task-list')
-        data = {}  # Sin datos requeridos
+    def test_search_tasks_without_authentication_fails(self):
+        self._login_fail_user()
         
-        response = self.client.post(url, data, format='json')
+        response = self._search_task('test')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         
-        # Debería fallar por campos faltantes
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-    
-    def test_create_task_with_very_long_title(self):
-        """Test: Crear tarea con título muy largo"""
-        url = reverse('task-list')
-        data = {
-            'title': 'A' * 300,  # Título muy largo
-            'description': 'Test description'
-        }
-        
-        response = self.client.post(url, data, format='json')
-        
-        # Debería fallar si el modelo tiene límite de caracteres
-        if response.status_code != status.HTTP_201_CREATED:
-            self.assertIn(response.status_code, [status.HTTP_400_BAD_REQUEST])
-    
-    def test_get_task_with_invalid_uuid(self):
-        """Test: Obtener tarea con UUID inválido"""
-        url = reverse('task-detail', args=['invalid-uuid'])
-        
-        response = self.client.get(url)
-        
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-    
-    def test_update_nonexistent_task(self):
-        """Test: Actualizar tarea que no existe"""
-        url = reverse('task-detail', args=['00000000-0000-0000-0000-000000000000'])
-        data = {
-            'title': 'Tarea Inexistente',
-            'description': 'Esta tarea no existe'
-        }
-        
-        response = self.client.put(url, data, format='json')
-        
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
